@@ -1,15 +1,17 @@
-#!/pbs/throng/grand/soft/miniconda3/bin/python
+#!/pbs/home/x/xtian/.conda/envs/grandlib2304/bin/python3.9
 import numpy as np
+import sys
+import grand.dataio.root_trees as rt
 
 def extract_trigger_parameters(trace, trigger_config, baseline=0):
-    # Extrace the trigger infos from a trace
+    # Extract the trigger infos from a trace
 
     # Parameters :
     # ------------
     # trace, numpy.ndarray: 
     # traces in ADC unit
     # trigger_config, dict:
-    # the nine trigger parameters set in DAQ
+    # the trigger parameters set in DAQ
 
     # Returns :
     # ---------
@@ -26,7 +28,16 @@ def extract_trigger_parameters(trace, trigger_config, baseline=0):
     if sum(mask_T1_crossing) == 0:
         # No T1 crossing 
         raise ValueError("No T1 crossing!")
-    dict_trigger_infos["index_T1_crossing"] = index_t1_crossing[mask_T1_crossing][0]
+    dict_trigger_infos['index_T1_crossing'] = None
+    # Tquiet to decide the quiet time before the T1 crossing 
+    for i in index_t1_crossing[mask_T1_crossing]:
+       # Abs value not exceeds the T1 threshold
+       if np.all(np.abs(trace[i - trigger_config['t_quiet'] // 2:i]) < trigger_config["th1"]):
+          dict_trigger_infos["index_T1_crossing"] = i
+          # the first T1 crossing satisfying the quiet condition
+          break
+    if dict_trigger_infos['index_T1_crossing'] == None:
+       raise ValueError("No T1 crossing with Tquiet satified!")
     # The trigger logic works for the timewindow given by T_period after T1 crossing.
     # Count number of T2 crossings, relevant pars: T2, NCmin, NCmax, T_sepmax
     # From ns to index, divided by two for 500MHz sampling rate
@@ -47,50 +58,71 @@ def extract_trigger_parameters(trace, trigger_config, baseline=0):
     mask_first_T1_crossing[0] = True
     mask_first_T1_crossing[1:] = (mask_T2_crossing_positive | mask_T2_crossing_negative)
     index_T2_crossing = np.arange(len(period_after_T1_crossing))[mask_first_T1_crossing]
-    sep_T2_crossing = np.diff(index_T2_crossing)
     n_T2_crossing = 1 # Starting from the first T1 crossing.
     dict_trigger_infos["index_T2_crossing"] = [0]
-    for i, j in zip(index_T2_crossing[:-1], index_T2_crossing[1:]):
-        # The separation between successive T2 crossings
-        time_separation = (j - i) * 2
-        if time_separation <= trigger_config["t_sepmax"]:
-            n_T2_crossing += 1
-            dict_trigger_infos["index_T2_crossing"].append(j)
-        else:
-            # Violate the maximum separation, stop counting NC
-            # Save the position of the last T2 crossing, i.e., i
-            # to be used for calculating the Q value
+    if len(index_T2_crossing) > 1:
+      for i, j in zip(index_T2_crossing[:-1], index_T2_crossing[1:]):
+          # The separation between successive T2 crossings
+          time_separation = (j - i) * 2
+          if time_separation <= trigger_config["t_sepmax"]:
+              n_T2_crossing += 1
+              dict_trigger_infos["index_T2_crossing"].append(j)
+          else:
+              # Violate the maximum separation, stop counting NC
+              # Save the position of the last T2 crossing, i.e., i
+              # to be used for calculating the Q value
             break
+    else:
+      n_T2_crossing = 1
+      j = 1
     dict_trigger_infos["NC"] = n_T2_crossing
     # Calulate the peak value
     dict_trigger_infos["Q"] = (np.max(np.abs(period_after_T1_crossing[:j])) - baseline) / dict_trigger_infos["NC"]
     return dict_trigger_infos
 
 dict_trigger_parameter = dict([
-("t_quiet", 512),
-("t_period", 512),
-("t_sepmax", 20),
-("nc_min", 0),
-("nc_max", 10),
-("q_min", 0),
-("q_max", 255),
-("th1", 60),
-("th2", 30),
-# Configs of readout timewindow
-("t_pretrig", 960),
-("t_overlap", 64),
-("t_posttrig", 1024)
-])
+  ("t_quiet", 512),
+  ("t_period", 512),
+  ("t_sepmax", 20),
+  ("nc_min", 0),
+  ("nc_max", 10),
+  ("q_min", 0),
+  ("q_max", 255),
+  ("th1", 100),
+  ("th2", 50),
+  # Configs of readout timewindow
+  ("t_pretrig", 960),
+  ("t_overlap", 64),
+  ("t_posttrig", 1024)
+  ])
 
 
-# Read the traces from experimental data
+if __name__ == "__main__":
+  # Read the traces from experimental data
+  fname = sys.argv[1]
+  file = rt.DataFile(fname)
+  n_entries = file.tadc.get_number_of_entries()
+  # Pad zeros at the head of the trace to statify the Tquiet condition
+  zero_head = np.zeros(dict_trigger_parameter["t_quiet"] // 2, dtype=int)
 
-# Zero padding at first
+  trigger_index = []
+  for k in range(n_entries):
+    file.tadc.get_entry(k)
+    # Loop over four channels
+    for v in range(4):
+      trace = file.tadc.trace_ch[0][v]
+      # Zero padding at first
+      trace_padded = np.concatenate((zero_head, trace))
+      try:
+        # Check if trigger
+        trigger_infos = extract_trigger_parameters(trace_padded, dict_trigger_parameter)
+        # Save the triggered traces
+        if trigger_infos["NC"] >= dict_trigger_parameter["nc_min"] and trigger_infos["NC"] <= dict_trigger_parameter["nc_max"]:
+          trigger_index.append(k)
+          break
+      except ValueError:
+        # No T1 crossing, no trigger
+        # print(k, ": No trigger.")
+        pass
 
-# Check if trigger
-try:
-  trigger_infos = extract_trigger_parameters(trace_padded, dict_trigger_parameter)
-  # Save the triggered traces
-except ValueError:
-  # No T1 crossing, no trigger
-    
+  np.savetxt(f"./{fname.split('/')[-1]}.trigger.txt", trigger_index, delimiter=', ', fmt='%d')
