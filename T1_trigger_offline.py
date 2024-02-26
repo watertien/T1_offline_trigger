@@ -32,7 +32,9 @@ def extract_trigger_parameters(trace, trigger_config, baseline=0):
     # Tquiet to decide the quiet time before the T1 crossing 
     for i in index_t1_crossing[mask_T1_crossing]:
        # Abs value not exceeds the T1 threshold
-       if np.all(np.abs(trace[i - trigger_config['t_quiet'] // 2:i]) < trigger_config["th1"]):
+       if i - trigger_config["t_quiet"]//2 < 0:
+          raise ValueError("Not enough data before T1 crossing!")
+       if np.all(np.abs(trace[np.max(0, i - trigger_config['t_quiet'] // 2):i]) < trigger_config["th1"]):
           dict_trigger_infos["index_T1_crossing"] = i
           # the first T1 crossing satisfying the quiet condition
           break
@@ -75,6 +77,8 @@ def extract_trigger_parameters(trace, trigger_config, baseline=0):
     else:
       n_T2_crossing = 1
       j = 1
+    # Change the reference of indices of T2 crossing
+    dict_trigger_infos["index_T2_crossing"] = np.array(dict_trigger_infos["index_T2_crossing"]) + dict_trigger_infos["index_T1_crossing"]
     dict_trigger_infos["NC"] = n_T2_crossing
     # Calulate the peak value
     dict_trigger_infos["Q"] = (np.max(np.abs(period_after_T1_crossing[:j])) - baseline) / dict_trigger_infos["NC"]
@@ -83,9 +87,9 @@ def extract_trigger_parameters(trace, trigger_config, baseline=0):
 dict_trigger_parameter = dict([
   ("t_quiet", 512),
   ("t_period", 512),
-  ("t_sepmax", 20),
-  ("nc_min", 0),
-  ("nc_max", 10),
+  ("t_sepmax", 10),
+  ("nc_min", 2),
+  ("nc_max", 8),
   ("q_min", 0),
   ("q_max", 255),
   ("th1", 100),
@@ -106,16 +110,17 @@ if __name__ == "__main__":
   zero_head = np.zeros(dict_trigger_parameter["t_quiet"] // 2, dtype=int)
 
   trigger_index = []
+  # Loop over all entries
   for k in range(n_entries):
     file.tadc.get_entry(k)
     # Loop over four channels
     for v in range(4):
       trace = file.tadc.trace_ch[0][v]
       # Zero padding at first
-      trace_padded = np.concatenate((zero_head, trace))
+      # trace_padded = np.concatenate((zero_head, trace))
       try:
         # Check if trigger
-        trigger_infos = extract_trigger_parameters(trace_padded, dict_trigger_parameter)
+        trigger_infos = extract_trigger_parameters(trace, dict_trigger_parameter)
         # Save the triggered traces
         if trigger_infos["NC"] >= dict_trigger_parameter["nc_min"] and trigger_infos["NC"] <= dict_trigger_parameter["nc_max"]:
           trigger_index.append(k)
@@ -125,4 +130,6 @@ if __name__ == "__main__":
         # print(k, ": No trigger.")
         pass
 
-  np.savetxt(f"./{fname.split('/')[-1]}.trigger.txt", trigger_index, delimiter=', ', fmt='%d')
+  print(f"{fname}: {len(trigger_index)} out of {n_entries} triggered.")
+  if len(trigger_index) > 0:
+    np.savetxt(f"./{fname.split('/')[-1]}.trigger.txt", trigger_index, delimiter=', ', fmt='%d', header=str(dict_trigger_parameter))
