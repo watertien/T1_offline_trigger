@@ -2,7 +2,7 @@ import numpy as np
 
 th1_pos_from_root = 700
 trace_length = 1024
-file_traces = np.genfromtxt("install/grand-daq-master_240319/wavelet_test.txt")
+
 
 
 def grand_trigger_fv3(trace, trigger_config):
@@ -38,12 +38,13 @@ def grand_trigger_fv3(trace, trigger_config):
     plength=0 # length of the pulse
     nc = 0 # number of points above Th2
     t2prev = -1 # if the prevous point is above Th2
-    triggered_bool = 100 # if finishes the decision of trigger
+    triggered_bool = 0 # if finishes the decision of trigger
     triggered_pos = 0 # position of traces when finishes the trigger logics
     th1 = trigger_config["th1"]
     dict_trigger_infos = {}
     index_T1 = []
     index_T2 = []
+    trigger_times = 0 # number of pulses found in the trace
     for i in range(trace_length):
         if (i == (th1_pos_from_root - 10)):
             th1 -= 3
@@ -76,6 +77,7 @@ def grand_trigger_fv3(trace, trigger_config):
                     triggered_bool = 1 # pass all conditions, set to 1
                     triggered_pos = i # index of statifying the whole pulse logic
                     # print("One trigger")
+                    trigger_times += 1
         if (wl[i] >= th1) & ((t1position < 0) | ((i - t1position) > trigger_config["t_quiet"] // 2)):
             # ADC above Th1 and statisfy the quiet condition
             # start to process the pulse to decide the trigger
@@ -98,25 +100,29 @@ def grand_trigger_fv3(trace, trigger_config):
     dict_trigger_infos["Index_T2_crossing"] = index_T2
     dict_trigger_infos["trigger_flag"] = triggered_bool
     dict_trigger_infos["trigger_pos"] = triggered_pos # index where the trigger logics is satisfied.
+    dict_trigger_infos["trigger_times"] = trigger_times # index where the trigger logics is satisfied.
     return dict_trigger_infos
 
 
 
 if __name__ == "__main__":
+    file_traces = np.genfromtxt("install/grand-daq-master_240319/wavelet_test.txt")
     dict_trigger_parameter = dict([
     ("t_quiet", 0), # working
     ("t_period", 10), # working
-    ("t_sepmax", 20), # working
-    ("nc_min", 0), # not working, only 0 or 1 can be allowed, otherwise cannot trigger
-    ("nc_max", 5), # working
+    ("t_sepmax", 20), # working, found
+    ("nc_min", 0), # not working, only 0 or 1 can be allowed, otherwise cannot trigger, found
+    ("nc_max", 5), # working, found
     ("q_min", 0), # not used
     ("q_max", 255), # not used
-    ("th1", 100), # working
-    ("th2", 50), # working
+    ("th1", 100), # working, found
+    ("th2", 50), # working, found
     # Configs of readout timewindow
-    ("t_pretrig", 960),
-    ("t_overlap", 64),
-    ("t_posttrig", 1024)
+    ("t_pretrig", 960), # found
+    ("t_overlap", 64), # not found in the gtot
+    ("t_posttrig", 1024) # found
     ])
+
+    
     trigger_infos = grand_trigger_fv3(file_traces[:,1], dict_trigger_parameter)
     print(trigger_infos)
