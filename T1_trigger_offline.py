@@ -34,7 +34,7 @@ def extract_trigger_parameters(trace, trigger_config, baseline=0):
        # Abs value not exceeds the T1 threshold
        if i - trigger_config["t_quiet"]//2 < 0:
           raise ValueError("Not enough data before T1 crossing!")
-       if np.all(np.abs(trace[np.max(0, i - trigger_config['t_quiet'] // 2):i]) < trigger_config["th1"]):
+       if np.all(np.abs(trace[np.max([0, i - trigger_config['t_quiet'] // 2]):i]) < trigger_config["th1"]):
           dict_trigger_infos["index_T1_crossing"] = i
           # the first T1 crossing satisfying the quiet condition
           break
@@ -58,7 +58,8 @@ def extract_trigger_parameters(trace, trigger_config, baseline=0):
     # Register the first T1 crossing as a T2 crossing
     mask_first_T1_crossing = np.zeros(len(period_after_T1_crossing), dtype=bool)
     mask_first_T1_crossing[0] = True
-    mask_first_T1_crossing[1:] = (mask_T2_crossing_positive | mask_T2_crossing_negative)
+    # mask_first_T1_crossing[1:] = (mask_T2_crossing_positive | mask_T2_crossing_negative)
+    mask_first_T1_crossing[1:] = (mask_T2_crossing_positive)
     index_T2_crossing = np.arange(len(period_after_T1_crossing))[mask_first_T1_crossing]
     n_T2_crossing = 1 # Starting from the first T1 crossing.
     dict_trigger_infos["index_T2_crossing"] = [0]
