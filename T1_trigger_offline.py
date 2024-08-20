@@ -21,7 +21,7 @@ def extract_trigger_parameters(trace, trigger_config, baseline=0):
     # Q, Peak/NC
 
     # Find the position of the first T1 crossing
-    index_t1_crossing = np.where(np.abs(trace) > trigger_config["th1"],
+    index_t1_crossing = np.where((trace) > trigger_config["th1"],
                                  np.arange(len(trace)), -1)
     dict_trigger_infos = dict()
     mask_T1_crossing = (index_t1_crossing != -1)
