@@ -67,14 +67,12 @@ def extract_trigger_parameters(trace, trigger_config, baseline=0):
       for i, j in zip(index_T2_crossing[:-1], index_T2_crossing[1:]):
           # The separation between successive T2 crossings
           time_separation = (j - i) * 2
-          if time_separation <= trigger_config["t_sepmax"]:
+          if time_separation < trigger_config["t_sepmax"]:
               n_T2_crossing += 1
               dict_trigger_infos["index_T2_crossing"].append(j)
           else:
-              # Violate the maximum separation, stop counting NC
-              # Save the position of the last T2 crossing, i.e., i
-              # to be used for calculating the Q value
-            break
+              # Violate the maximum separation, fail to trigger
+              raise ValueError(f"Violating Tsepmax, the separation is {time_separation} ns.")
     else:
       n_T2_crossing = 1
       j = 1
